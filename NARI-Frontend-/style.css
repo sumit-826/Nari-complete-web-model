@@ -1,0 +1,349 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Dancing+Script:wght@700&display=swap');
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #050507;
+    color: #e2e8f0;
+    overflow: hidden;
+    margin: 0;
+}
+
+.font-script {
+    font-family: 'Dancing Script', cursive;
+}
+
+/* Global Smooth Transitions */
+button,
+input,
+a {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Three.js Background Canvas */
+#bg-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+/* Layout */
+#main-container {
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+}
+
+.sidebar {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateX(0);
+    width: 260px;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(12px);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar.closed {
+    width: 0;
+    transform: translateX(-100%);
+    opacity: 0;
+    padding: 0;
+    pointer-events: none;
+}
+
+/* Glassmorphism */
+.glass-panel {
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-card {
+    background: rgba(30, 41, 59, 0.4);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+    background: rgba(51, 65, 85, 0.5);
+    transform: scale(1.02);
+    border-color: rgba(139, 92, 246, 0.5);
+    box-shadow: 0 10px 30px -10px rgba(139, 92, 246, 0.3), 0 0 15px rgba(139, 92, 246, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Shining Border Animation */
+.glass-card:hover::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 200%;
+    height: 100%;
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(255, 255, 255, 0.1),
+            transparent);
+    animation: shine 1.5s infinite;
+    transform: skewX(-20deg);
+}
+
+@keyframes shine {
+    0% {
+        left: -100%;
+    }
+
+    100% {
+        left: 100%;
+    }
+}
+
+/* The Logo with Breathing Effect */
+.orb-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+}
+
+.orb-logo {
+    width: 100%;
+    height: 100%;
+    animation: pulse 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 30px rgba(139, 92, 246, 0.6));
+}
+
+/* Gradients */
+.text-gradient {
+    background: linear-gradient(to right, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.9;
+    }
+
+    50% {
+        transform: scale(1.05);
+        opacity: 1;
+    }
+}
+
+/* Attachment Menu */
+.attachment-menu {
+    position: absolute;
+    bottom: calc(100% + 12px);
+    left: 10px;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 8px;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+}
+
+.attachment-menu.active {
+    display: flex;
+}
+
+.attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: #94a3b8;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.attachment-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+
+/* Chat Messages */
+.chat-messages-container {
+    width: 100%;
+    max-width: 800px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px 0;
+    flex-grow: 1;
+}
+
+.chat-message {
+    padding: 14px 18px;
+    border-radius: 18px;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    max-width: 85%;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.user-message {
+    align-self: flex-end;
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    color: #f1f5f9;
+    border-bottom-right-radius: 4px;
+}
+
+.ai-message {
+    align-self: flex-start;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: #cbd5e1;
+    border-bottom-left-radius: 4px;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#welcome-view.hidden {
+    display: none;
+}
+
+/* Info Panel (Right Side) */
+#info-panel {
+    transition: all 0.3s ease;
+    background: rgba(10, 15, 25, 0.4);
+}
+
+#info-panel:not(.hidden) {
+    display: flex;
+}
+
+/* Tree Structure */
+.tree-node {
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.2s;
+    margin-bottom: 8px;
+}
+
+.tree-node:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.node-content {
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+    animation: slideDown 0.2s ease-out;
+}
+
+.node-content:not(.hidden) {
+    display: block;
+}
+
+.node-chevron {
+    transition: transform 0.2s;
+}
+
+.tree-node.active .node-chevron {
+    transform: rotate(90deg);
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-3px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Recent Chats Delete */
+.chat-item-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.delete-chat-btn {
+    opacity: 0;
+    transition: all 0.2s;
+    color: #64748b;
+}
+
+.chat-item-container:hover .delete-chat-btn {
+    opacity: 1;
+}
+
+.delete-chat-btn:hover {
+    color: #ef4444;
+}
+
+/* Model Dropdown */
+#model-dropdown.active {
+    display: flex;
+}
+
+.model-check.hidden {
+    display: none;
+}
+
+/* Thinking Indicator */
+.thinking-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.thinking-indicator i {
+    color: #818cf8;
+}
