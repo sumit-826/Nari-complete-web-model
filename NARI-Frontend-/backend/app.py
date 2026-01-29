@@ -143,6 +143,7 @@ def chat():
     user_text = data.get('text', '')
     model_type = data.get('model', 'Fast')  # 'Fast' or 'Thinking'
     chat_id = data.get('chat_id')
+    enabled_tools_config = data.get('enabled_tools', {})  # {webSearch: bool, stock: bool}
     
     try:
         # Build messages for LLM
@@ -177,8 +178,28 @@ def chat():
         # Add current user message
         messages.append(LLMMessage(role="user", content=user_text))
         
-        # Get tools
-        tools = registry.get_tools_for_llm()
+        # Get tools - filter based on enabled_tools
+        all_tools = registry.get_tools_for_llm()
+        
+        # Define which tools belong to which category
+        web_search_tools = {'web_search', 'tavily_search'}
+        stock_tools = {'get_stock_price', 'get_stock_overview', 'get_market_news'}
+        
+        # Filter tools based on enabled flags
+        tools = []
+        for tool in all_tools:
+            tool_name = tool.name
+            
+            # Check if tool is in a category that requires enabling
+            if tool_name in web_search_tools:
+                if enabled_tools_config.get('webSearch', False):
+                    tools.append(tool)
+            elif tool_name in stock_tools:
+                if enabled_tools_config.get('stock', False):
+                    tools.append(tool)
+            else:
+                # Other tools (file ops, etc.) are always available
+                tools.append(tool)
         
         # Call LLM asynchronously
         loop = asyncio.new_event_loop()
@@ -221,19 +242,34 @@ def chat():
         
         loop.close()
         
+        # Extract reasoning from <think> tags (for models like DeepSeek)
+        import re
+        reasoning = None
+        clean_content = ai_content
+        
+        # Match <think>...</think> pattern (case insensitive, dotall for multiline)
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+        think_match = think_pattern.search(ai_content)
+        
+        if think_match:
+            reasoning = think_match.group(1).strip()
+            # Remove the think tags from the final response
+            clean_content = think_pattern.sub('', ai_content).strip()
+        
         # Extract and store memories
         if memory_service and memory_service.is_enabled and config.memory_auto_extract:
             memory_service.extract_and_store(
                 user_input=user_text,
-                assistant_response=ai_content,
+                assistant_response=clean_content,
                 user_id=config.memory_user_id,
             )
         
         return jsonify({
-            'content': ai_content,
+            'content': clean_content,
+            'reasoning': reasoning,  # The thinking/reasoning steps
             'model': config.current_model,
             'provider': config.default_provider.value,
-            'processSteps': model_type == 'Thinking'
+            'processSteps': model_type == 'Thinking' or reasoning is not None
         })
         
     except Exception as e:

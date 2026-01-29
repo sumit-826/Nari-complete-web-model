@@ -1,6 +1,30 @@
 // State Management
 let currentChatId = null;
 let selectedModel = 'Fast';
+let isSending = false; // Track if a message is being sent
+
+// Tool Toggle State
+let enabledTools = {
+    webSearch: false,  // Tavily web search
+    stock: false       // Alpha Vantage stock data
+};
+
+// Settings State
+const defaultSettings = {
+    theme: 'dark',
+    accentColor: 'indigo',
+    defaultModel: 'Fast',
+    temperature: 0.7,
+    systemPrompt: '',
+    enterToSend: true,
+    soundEffects: false,
+    autoEnableSearch: false,
+    autoEnableStock: false,
+    backendUrl: 'http://localhost:5000',
+    ollamaUrl: 'http://localhost:11434'
+};
+
+let appSettings = { ...defaultSettings };
 
 // BACKEND API SERVICE LAYER
 // This class connects to the Flask/SQLite backend.
@@ -41,12 +65,18 @@ class BackendService {
     }
 
     // Send message to AI via Flask API (Nova LLM integration)
-    async sendMessage(text, model, attachments = [], chatId = null) {
+    async sendMessage(text, model, attachments = [], chatId = null, tools = {}) {
         try {
             const response = await fetch(`${this.baseUrl}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, model, attachments, chat_id: chatId })
+                body: JSON.stringify({
+                    text,
+                    model,
+                    attachments,
+                    chat_id: chatId,
+                    enabled_tools: tools  // Pass which tools are enabled
+                })
             });
 
             if (!response.ok) {
@@ -143,6 +173,7 @@ const defaultPrompts = [
 // Initialize
 async function init() {
     chatHistory = await apiService.loadHistory();
+    loadSettingsFromStorage(); // Load saved settings
     renderRecentChats();
     renderSuggestions();
     updateGreeting();
@@ -189,11 +220,11 @@ function renderRecentChats() {
         const div = document.createElement('div');
         div.className = 'group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 cursor-pointer transition text-slate-400 hover:text-white chat-item-container';
         div.innerHTML = `
-            <div class="flex items-center gap-3 truncate flex-1" onclick="loadChat(${chat.id})">
+            <div class="flex items-center gap-3 truncate flex-1" onclick="loadChat('${chat.id}')">
                 <i class="fa-regular fa-message text-xs"></i>
                 <span class="text-sm truncate">${chat.title}</span>
             </div>
-            <button class="delete-chat-btn p-1 hover:bg-white/10 rounded" onclick="event.stopPropagation(); deleteChat(${chat.id})">
+            <button class="delete-chat-btn p-1 hover:bg-white/10 rounded" onclick="event.stopPropagation(); deleteChat('${chat.id}')">
                 <i class="fa-solid fa-trash text-[10px]"></i>
             </button>
         `;
@@ -262,7 +293,13 @@ function createNewChat() {
 
 async function sendMessage() {
     const text = mainInput.value.trim();
-    if (!text) return;
+    if (!text || isSending) return; // Prevent sending if already sending
+
+    // Set sending state - disable input
+    isSending = true;
+    mainInput.disabled = true;
+    sendBtn.disabled = true;
+    sendBtn.classList.add('opacity-50', 'cursor-not-allowed');
 
     if (!currentChatId) {
         currentChatId = Date.now();
@@ -297,10 +334,16 @@ async function sendMessage() {
 
     try {
         // Call backend API for AI response (Nova LLM)
-        const response = await apiService.sendMessage(text, selectedModel, attachedFiles, currentChatId);
+        const response = await apiService.sendMessage(text, selectedModel, attachedFiles, currentChatId, enabledTools);
 
         // Remove thinking indicator
         thinkingDiv.remove();
+
+        // Display reasoning in the thinking panel if available
+        if (response.reasoning) {
+            infoPanel?.classList.remove('hidden');
+            displayReasoning(response.reasoning);
+        }
 
         // Add AI response
         const aiContent = response.content || "I couldn't generate a response.";
@@ -324,6 +367,13 @@ async function sendMessage() {
         console.error('Error in sendMessage:', error);
         thinkingDiv.remove();
         addMessage(messagesDiv, 'Sorry, an error occurred. Please try again.', 'ai');
+    } finally {
+        // Re-enable input regardless of success/error
+        isSending = false;
+        mainInput.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        mainInput.focus();
     }
 }
 
@@ -364,15 +414,33 @@ function loadChat(id) {
 
 async function deleteChat(id) {
     if (confirm('Are you sure you want to delete this chat?')) {
-        await apiService.deleteChat(id); // Backend call
+        try {
+            // Delete from backend first
+            const success = await apiService.deleteChat(id);
 
-        chatHistory = chatHistory.filter(c => c.id !== id);
-        if (currentChatId === id) {
-            createNewChat();
+            // Always update local state regardless of backend result
+            chatHistory = chatHistory.filter(c => String(c.id) !== String(id));
+
+            // If we deleted the current chat, start a new one
+            if (String(currentChatId) === String(id)) {
+                createNewChat();
+            }
+
+            // Re-render UI
+            renderRecentChats();
+            renderSuggestions();
+
+            console.log(`Chat ${id} deleted ${success ? 'from backend and' : ''} locally`);
+        } catch (error) {
+            console.error('Error deleting chat:', error);
+            // Still update local UI even if backend fails
+            chatHistory = chatHistory.filter(c => String(c.id) !== String(id));
+            if (String(currentChatId) === String(id)) {
+                createNewChat();
+            }
+            renderRecentChats();
+            renderSuggestions();
         }
-        await apiService.saveHistory(chatHistory);
-        renderRecentChats();
-        renderSuggestions();
     }
 }
 
@@ -470,6 +538,59 @@ function runProcessAnimation() {
         addProcessNode(mockSteps[i].key, mockSteps[i].content);
         i++;
     }, 500);
+}
+
+// Display actual reasoning from AI response
+function displayReasoning(reasoning) {
+    clearProcessNodes();
+
+    if (!reasoning || !hierarchyTree) return;
+
+    // Split reasoning into paragraphs/steps
+    const steps = reasoning.split(/\n\n+/).filter(s => s.trim());
+
+    if (steps.length === 0) {
+        // If no paragraphs, just show as one thinking block
+        addProcessNode('thinking', reasoning);
+        return;
+    }
+
+    // Map each step to a node type based on content keywords
+    steps.forEach((step, index) => {
+        const lowerStep = step.toLowerCase();
+        let nodeType = 'thinking';
+
+        if (lowerStep.includes('analyze') || lowerStep.includes('analyzing') || lowerStep.includes('look at')) {
+            nodeType = 'analyzing';
+        } else if (lowerStep.includes('process') || lowerStep.includes('processing')) {
+            nodeType = 'processing';
+        } else if (lowerStep.includes('fix') || lowerStep.includes('correct') || lowerStep.includes('solving')) {
+            nodeType = 'fixing';
+        } else if (lowerStep.includes('plan') || lowerStep.includes('step')) {
+            nodeType = 'plan';
+        } else if (lowerStep.includes('summary') || lowerStep.includes('conclusion') || lowerStep.includes('finally')) {
+            nodeType = 'walkthrough';
+        }
+
+        // Add with unique key to prevent overwriting
+        const uniqueKey = `${nodeType}_${index}`;
+        const config = nodeConfig[nodeType];
+
+        const nodeDiv = document.createElement('div');
+        nodeDiv.className = 'tree-node group active';
+        nodeDiv.onclick = () => toggleNode(`node-${uniqueKey}`);
+        nodeDiv.innerHTML = `
+            <div class="flex items-center gap-3 ${config.color} cursor-pointer">
+                <i class="fa-solid ${config.icon} text-sm"></i>
+                <span class="text-sm font-medium">${config.label} ${index + 1}</span>
+                <i class="fa-solid fa-chevron-down text-[10px] ml-auto transition-transform node-chevron"></i>
+            </div>
+            <div id="node-${uniqueKey}" class="node-content mt-2 ml-7 text-xs text-slate-400 pl-3 border-l border-white/10">
+                ${step.trim()}
+            </div>
+        `;
+        hierarchyTree.appendChild(nodeDiv);
+    });
 }
 
 // Old saveHistory removed. Using apiService.saveHistory()
@@ -634,6 +755,209 @@ function updateGreeting() {
 
     greetingText.textContent = `${greeting}, there`;
 }
+
+// Toggle tool on/off
+function toggleTool(toolName) {
+    if (enabledTools.hasOwnProperty(toolName)) {
+        enabledTools[toolName] = !enabledTools[toolName];
+
+        // Update button visual state
+        let btnId;
+        if (toolName === 'webSearch') {
+            btnId = 'web-search-toggle';
+        } else if (toolName === 'stock') {
+            btnId = 'stock-toggle';
+        }
+
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            if (enabledTools[toolName]) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
+
+        console.log(`Tool '${toolName}' is now ${enabledTools[toolName] ? 'enabled' : 'disabled'}`);
+    }
+}
+
+// ============================================================================
+// Settings Functions
+// ============================================================================
+
+function openSettings() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        populateSettingsUI();
+    }
+}
+
+function closeSettings() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function loadSettingsFromStorage() {
+    try {
+        const saved = localStorage.getItem('nari_settings');
+        if (saved) {
+            appSettings = { ...defaultSettings, ...JSON.parse(saved) };
+        }
+
+        // Apply auto-enable settings for tools
+        if (appSettings.autoEnableSearch) {
+            enabledTools.webSearch = true;
+            document.getElementById('web-search-toggle')?.classList.add('active');
+        }
+        if (appSettings.autoEnableStock) {
+            enabledTools.stock = true;
+            document.getElementById('stock-toggle')?.classList.add('active');
+        }
+
+        // Apply default model
+        selectedModel = appSettings.defaultModel;
+        document.getElementById('current-model').textContent = selectedModel;
+
+        // Update backend URL
+        if (appSettings.backendUrl) {
+            apiService.baseUrl = appSettings.backendUrl + '/api';
+        }
+
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+function populateSettingsUI() {
+    // Populate all settings fields with current values
+    document.getElementById('setting-theme').value = appSettings.theme;
+    document.getElementById('setting-accent').value = appSettings.accentColor;
+    document.getElementById('setting-model').value = appSettings.defaultModel;
+    document.getElementById('setting-temperature').value = appSettings.temperature;
+    document.getElementById('temp-value').textContent = appSettings.temperature;
+    document.getElementById('setting-system-prompt').value = appSettings.systemPrompt || '';
+    document.getElementById('setting-enter-send').checked = appSettings.enterToSend;
+    document.getElementById('setting-sound').checked = appSettings.soundEffects;
+    document.getElementById('setting-auto-search').checked = appSettings.autoEnableSearch;
+    document.getElementById('setting-auto-stock').checked = appSettings.autoEnableStock;
+    document.getElementById('setting-backend-url').value = appSettings.backendUrl;
+    document.getElementById('setting-ollama-url').value = appSettings.ollamaUrl;
+
+    // Add temperature slider listener
+    const tempSlider = document.getElementById('setting-temperature');
+    tempSlider.oninput = () => {
+        document.getElementById('temp-value').textContent = tempSlider.value;
+    };
+}
+
+function saveSettings() {
+    // Gather all settings from UI
+    appSettings = {
+        theme: document.getElementById('setting-theme').value,
+        accentColor: document.getElementById('setting-accent').value,
+        defaultModel: document.getElementById('setting-model').value,
+        temperature: parseFloat(document.getElementById('setting-temperature').value),
+        systemPrompt: document.getElementById('setting-system-prompt').value,
+        enterToSend: document.getElementById('setting-enter-send').checked,
+        soundEffects: document.getElementById('setting-sound').checked,
+        autoEnableSearch: document.getElementById('setting-auto-search').checked,
+        autoEnableStock: document.getElementById('setting-auto-stock').checked,
+        backendUrl: document.getElementById('setting-backend-url').value,
+        ollamaUrl: document.getElementById('setting-ollama-url').value
+    };
+
+    // Save to localStorage
+    localStorage.setItem('nari_settings', JSON.stringify(appSettings));
+
+    // Apply settings immediately
+    selectedModel = appSettings.defaultModel;
+    document.getElementById('current-model').textContent = selectedModel;
+
+    // Update backend URL
+    apiService.baseUrl = appSettings.backendUrl + '/api';
+
+    // Apply auto-enable tools
+    if (appSettings.autoEnableSearch && !enabledTools.webSearch) {
+        toggleTool('webSearch');
+    }
+    if (appSettings.autoEnableStock && !enabledTools.stock) {
+        toggleTool('stock');
+    }
+
+    closeSettings();
+    console.log('Settings saved successfully!');
+}
+
+function resetSettings() {
+    if (confirm('Reset all settings to defaults?')) {
+        appSettings = { ...defaultSettings };
+        populateSettingsUI();
+    }
+}
+
+async function testConnection() {
+    const statusDiv = document.getElementById('connection-status');
+    const backendUrl = document.getElementById('setting-backend-url').value;
+
+    statusDiv.classList.remove('hidden');
+    statusDiv.className = 'mt-2 text-xs text-yellow-400';
+    statusDiv.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Testing connection...';
+
+    try {
+        const response = await fetch(`${backendUrl}/api/health`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000)
+        });
+
+        if (response.ok) {
+            statusDiv.className = 'mt-2 text-xs text-green-400';
+            statusDiv.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Connected successfully!';
+        } else {
+            throw new Error('Backend responded with error');
+        }
+    } catch (error) {
+        statusDiv.className = 'mt-2 text-xs text-red-400';
+        statusDiv.innerHTML = '<i class="fa-solid fa-xmark mr-1"></i> Connection failed. Check if backend is running.';
+    }
+}
+
+function exportChats() {
+    const data = JSON.stringify(chatHistory, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nari-chats-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function clearAllChats() {
+    if (confirm('Are you sure you want to delete ALL chats? This cannot be undone.')) {
+        chatHistory = [];
+        localStorage.removeItem('nari_chats');
+        createNewChat();
+        renderRecentChats();
+        renderSuggestions();
+        closeSettings();
+    }
+}
+
+// Expose all settings functions to window
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.saveSettings = saveSettings;
+window.resetSettings = resetSettings;
+window.testConnection = testConnection;
+window.exportChats = exportChats;
+window.clearAllChats = clearAllChats;
+
+// Expose toggleTool to window for HTML onclick
+window.toggleTool = toggleTool;
 
 init();
 window.toggleNode = toggleNode; // Expose to HTML

@@ -757,6 +757,187 @@ def get_project_structure(max_depth: int = 3, include_hidden: bool = False) -> s
 
 
 # ============================================================================
+# Alpha Vantage Stock Market Tools
+# ============================================================================
+
+@tool(
+    "get_stock_price",
+    "Get real-time stock price and quote data for a given stock symbol using Alpha Vantage API.",
+    [
+        ToolParameter(
+            name="symbol",
+            type="string",
+            description="The stock ticker symbol (e.g., 'AAPL', 'GOOGL', 'MSFT', 'TSLA').",
+            required=True,
+        ),
+    ],
+)
+def get_stock_price(symbol: str) -> str:
+    """Get real-time stock price for a given symbol."""
+    import requests
+    
+    try:
+        config = get_config()
+        api_key = config.alpha_vantage_api_key
+        
+        if not api_key:
+            return "Error: ALPHA_API_KEY is not set in .env file."
+        
+        # Use GLOBAL_QUOTE for real-time price
+        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol.upper()}&apikey={api_key}"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        if "Global Quote" not in data or not data["Global Quote"]:
+            return f"Error: No data found for symbol '{symbol}'. Check if the symbol is valid."
+        
+        quote = data["Global Quote"]
+        
+        # Format the response
+        output = [f"📈 Stock Quote for {symbol.upper()}\n"]
+        output.append(f"**Price**: ${quote.get('05. price', 'N/A')}")
+        output.append(f"**Change**: {quote.get('09. change', 'N/A')} ({quote.get('10. change percent', 'N/A')})")
+        output.append(f"**Open**: ${quote.get('02. open', 'N/A')}")
+        output.append(f"**High**: ${quote.get('03. high', 'N/A')}")
+        output.append(f"**Low**: ${quote.get('04. low', 'N/A')}")
+        output.append(f"**Previous Close**: ${quote.get('08. previous close', 'N/A')}")
+        output.append(f"**Volume**: {quote.get('06. volume', 'N/A')}")
+        output.append(f"**Latest Trading Day**: {quote.get('07. latest trading day', 'N/A')}")
+        
+        return "\n".join(output)
+    
+    except requests.exceptions.Timeout:
+        return "Error: Request timed out. Alpha Vantage may be slow."
+    except Exception as e:
+        return f"Error fetching stock price: {str(e)}"
+
+
+@tool(
+    "get_stock_overview",
+    "Get company overview and fundamentals for a stock symbol including market cap, P/E ratio, EPS, etc.",
+    [
+        ToolParameter(
+            name="symbol",
+            type="string",
+            description="The stock ticker symbol (e.g., 'AAPL', 'GOOGL', 'MSFT').",
+            required=True,
+        ),
+    ],
+)
+def get_stock_overview(symbol: str) -> str:
+    """Get company overview and fundamentals."""
+    import requests
+    
+    try:
+        config = get_config()
+        api_key = config.alpha_vantage_api_key
+        
+        if not api_key:
+            return "Error: ALPHA_API_KEY is not set in .env file."
+        
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={symbol.upper()}&apikey={api_key}"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        if not data or "Symbol" not in data:
+            return f"Error: No company data found for symbol '{symbol}'."
+        
+        # Format the response
+        output = [f"🏢 Company Overview: {data.get('Name', symbol.upper())}\n"]
+        output.append(f"**Symbol**: {data.get('Symbol', 'N/A')}")
+        output.append(f"**Exchange**: {data.get('Exchange', 'N/A')}")
+        output.append(f"**Sector**: {data.get('Sector', 'N/A')}")
+        output.append(f"**Industry**: {data.get('Industry', 'N/A')}")
+        output.append(f"\n**📊 Key Metrics:**")
+        output.append(f"  - Market Cap: ${data.get('MarketCapitalization', 'N/A')}")
+        output.append(f"  - P/E Ratio: {data.get('PERatio', 'N/A')}")
+        output.append(f"  - EPS: ${data.get('EPS', 'N/A')}")
+        output.append(f"  - Dividend Yield: {data.get('DividendYield', 'N/A')}")
+        output.append(f"  - 52-Week High: ${data.get('52WeekHigh', 'N/A')}")
+        output.append(f"  - 52-Week Low: ${data.get('52WeekLow', 'N/A')}")
+        output.append(f"  - 50-Day Moving Avg: ${data.get('50DayMovingAverage', 'N/A')}")
+        output.append(f"  - 200-Day Moving Avg: ${data.get('200DayMovingAverage', 'N/A')}")
+        output.append(f"\n**📝 Description:**")
+        desc = data.get('Description', 'No description available.')
+        output.append(f"{desc[:500]}..." if len(desc) > 500 else desc)
+        
+        return "\n".join(output)
+    
+    except requests.exceptions.Timeout:
+        return "Error: Request timed out."
+    except Exception as e:
+        return f"Error fetching company overview: {str(e)}"
+
+
+@tool(
+    "get_market_news",
+    "Get the latest market news and sentiment for a stock symbol or topic.",
+    [
+        ToolParameter(
+            name="tickers",
+            type="string",
+            description="Comma-separated stock tickers to get news for (e.g., 'AAPL,MSFT' or 'CRYPTO:BTC').",
+            required=False,
+            default="",
+        ),
+        ToolParameter(
+            name="topics",
+            type="string",
+            description="Topics to filter news (e.g., 'technology', 'earnings', 'ipo', 'finance').",
+            required=False,
+            default="",
+        ),
+    ],
+)
+def get_market_news(tickers: str = "", topics: str = "") -> str:
+    """Get market news and sentiment."""
+    import requests
+    
+    try:
+        config = get_config()
+        api_key = config.alpha_vantage_api_key
+        
+        if not api_key:
+            return "Error: ALPHA_API_KEY is not set in .env file."
+        
+        # Build URL with optional parameters
+        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey={api_key}"
+        if tickers:
+            url += f"&tickers={tickers.upper()}"
+        if topics:
+            url += f"&topics={topics.lower()}"
+        url += "&limit=5"  # Limit to 5 news items
+        
+        response = requests.get(url, timeout=15)
+        data = response.json()
+        
+        if "feed" not in data or not data["feed"]:
+            return "No news found for the specified criteria."
+        
+        output = ["📰 **Market News**\n"]
+        
+        for i, article in enumerate(data["feed"][:5], 1):
+            title = article.get("title", "No title")
+            source = article.get("source", "Unknown source")
+            summary = article.get("summary", "No summary available.")
+            sentiment = article.get("overall_sentiment_label", "Neutral")
+            time = article.get("time_published", "")
+            url = article.get("url", "")
+            
+            output.append(f"**{i}. {title}**")
+            output.append(f"   Source: {source} | Sentiment: {sentiment}")
+            output.append(f"   {summary[:200]}..." if len(summary) > 200 else f"   {summary}")
+            output.append(f"   [Read more]({url})\n")
+        
+        return "\n".join(output)
+    
+    except requests.exceptions.Timeout:
+        return "Error: Request timed out."
+    except Exception as e:
+        return f"Error fetching market news: {str(e)}"
+
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 
@@ -818,6 +999,9 @@ __all__ = [
     "web_search",
     "tavily_search",
     "get_project_structure",
+    "get_stock_price",
+    "get_stock_overview",
+    "get_market_news",
     "get_tool_descriptions",
     "execute_tool_call",
 ]

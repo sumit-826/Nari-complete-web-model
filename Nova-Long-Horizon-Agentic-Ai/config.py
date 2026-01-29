@@ -122,6 +122,10 @@ class Config:
     
     # Tavily Search Configuration
     tavily_api_key: str = field(default_factory=lambda: os.getenv("TAVILY_API_KEY", ""))
+    
+    # Alpha Vantage Stock Data Configuration
+    alpha_vantage_api_key: str = field(default_factory=lambda: os.getenv("ALPHA_API_KEY", "").strip())
+    
     memory_user_id: str = field(default_factory=lambda: os.getenv("USER_NAME", "default"))
     memory_search_limit: int = 10
     memory_auto_extract: bool = True  # Auto-extract memories from conversations
